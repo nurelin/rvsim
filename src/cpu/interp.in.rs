@@ -4,9 +4,9 @@
 // fields that should be captured in the `Op` enum variant. Both of these are matched by name to
 // functions defined in the `op` module.
 
-use ::cpu::op::Op;
-use ::cpu::types::{Clock, CpuError, CpuState, Memory, MemoryAccess};
-use ::softfloat::{self as sf, Sf32, Sf64};
+use cpu::op::Op;
+use cpu::types::{Clock, CpuError, CpuState, Memory, MemoryAccess};
+use softfloat::{self as sf, Sf32, Sf64};
 use std::num::FpCategory;
 
 type CpuExit = Result<(), CpuError>;
@@ -55,14 +55,10 @@ impl<'s, 'm, 'c, M: 'm + Memory, C: 'c + Clock> Interp<'s, 'm, 'c, M, C> {
     /// CPU, additionally returns the stop reason. In the latter case, the instruction may be
     /// `None` if it failed to load or parse.
     pub fn step(&mut self) -> Result<Op, (CpuError, Option<Op>)> {
-        // Increment counters.
-        if !self.clock.check_quota() {
-            return Err((CpuError::QuotaExceeded, None));
-        }
-
         // Read the next instruction.
         let mut instr: u32 = 0;
-        if !self.mem.access(self.state.pc, MemoryAccess::Exec(&mut instr)) {
+        if !self.mem
+                .access(self.state.pc, MemoryAccess::Exec(&mut instr)) {
             return Err((CpuError::IllegalFetch, None));
         }
 
@@ -77,9 +73,6 @@ impl<'s, 'm, 'c, M: 'm + Memory, C: 'c + Clock> Interp<'s, 'm, 'c, M, C> {
             //% dispatch
         };
 
-        // Increment counters.
-        self.clock.progress(&op);
-
         // Attach the `Op` to the result.
         match res {
             Ok(_) => Ok(op),
@@ -90,113 +83,110 @@ impl<'s, 'm, 'c, M: 'm + Memory, C: 'c + Clock> Interp<'s, 'm, 'c, M, C> {
     /// Read a value from or write a value to a CSR.
     fn access_csr(&mut self, id: u32, access: CsrAccess) -> bool {
         match id {
-            0x001 => { // fflags
+            0x001 => {
+                // fflags
                 match access {
                     CsrAccess::Read(dest) => {
                         *dest = self.state.fcsr & 0x1f;
                         true
-                    },
+                    }
                     CsrAccess::Write(value) => {
                         self.state.fcsr = (self.state.fcsr & 0xffff_ffe0) + (value & 0x1f);
                         true
-                    },
+                    }
                 }
-            },
-            0x002 => { // frm
+            }
+            0x002 => {
+                // frm
                 match access {
                     CsrAccess::Read(dest) => {
                         *dest = (self.state.fcsr & 0xe0) >> 5;
                         true
-                    },
+                    }
                     CsrAccess::Write(value) => {
                         self.state.fcsr = (self.state.fcsr & 0xffff_ff1f) + ((value & 0x7) << 5);
                         true
-                    },
+                    }
                 }
-            },
-            0x003 => { // fcsr
+            }
+            0x003 => {
+                // fcsr
                 match access {
                     CsrAccess::Read(dest) => {
                         *dest = self.state.fcsr & 0xff;
                         true
-                    },
+                    }
                     CsrAccess::Write(value) => {
                         self.state.fcsr = (self.state.fcsr & 0xffff_ff00) + (value & 0xff);
                         true
-                    },
+                    }
                 }
-            },
-            0xC00 => { // cycle
+            }
+            0xC00 => {
+                // cycle
                 match access {
                     CsrAccess::Read(dest) => {
                         *dest = self.clock.read_cycle() as u32;
                         true
-                    },
-                    CsrAccess::Write(_) => {
-                        true
-                    },
+                    }
+                    CsrAccess::Write(_) => true,
                 }
-            },
-            0xC80 => { // cycleh
+            }
+            0xC80 => {
+                // cycleh
                 match access {
                     CsrAccess::Read(dest) => {
                         *dest = (self.clock.read_cycle() >> 32) as u32;
                         true
-                    },
-                    CsrAccess::Write(_) => {
-                        true
-                    },
+                    }
+                    CsrAccess::Write(_) => true,
                 }
-            },
-            0xC01 => { // time
+            }
+            0xC01 => {
+                // time
                 match access {
                     CsrAccess::Read(dest) => {
                         *dest = self.clock.read_time() as u32;
                         true
-                    },
-                    CsrAccess::Write(_) => {
-                        true
-                    },
+                    }
+                    CsrAccess::Write(_) => true,
                 }
-            },
-            0xC81 => { // timeh
+            }
+            0xC81 => {
+                // timeh
                 match access {
                     CsrAccess::Read(dest) => {
                         *dest = (self.clock.read_time() >> 32) as u32;
                         true
-                    },
-                    CsrAccess::Write(_) => {
-                        true
-                    },
+                    }
+                    CsrAccess::Write(_) => true,
                 }
-            },
-            0xC02 => { // instret
+            }
+            0xC02 => {
+                // instret
                 match access {
                     CsrAccess::Read(dest) => {
                         *dest = self.clock.read_instret() as u32;
                         true
-                    },
-                    CsrAccess::Write(_) => {
-                        true
-                    },
+                    }
+                    CsrAccess::Write(_) => true,
                 }
-            },
-            0xC82 => { // instreth
+            }
+            0xC82 => {
+                // instreth
                 match access {
                     CsrAccess::Read(dest) => {
                         *dest = (self.clock.read_instret() >> 32) as u32;
                         true
-                    },
-                    CsrAccess::Write(_) => {
-                        true
-                    },
+                    }
+                    CsrAccess::Write(_) => true,
                 }
-            },
+            }
             _ => false,
         }
     }
 
-    // 
+    //
     // RV32I Base Integer Instruction Set
     //
 
@@ -295,7 +285,9 @@ impl<'s, 'm, 'c, M: 'm + Memory, C: 'c + Clock> Interp<'s, 'm, 'c, M, C> {
         let addr = self.state.x[rs1].wrapping_add(i_imm as u32);
         let mut value: i8 = 0;
         if self.mem.access(addr, MemoryAccess::Load(&mut value)) {
-            write_rd!(self, rd, { value as u32 });
+            write_rd!(self, rd, {
+                value as u32
+            });
             end_op!(self)
         } else {
             end_op!(self, IllegalAccess)
@@ -307,7 +299,9 @@ impl<'s, 'm, 'c, M: 'm + Memory, C: 'c + Clock> Interp<'s, 'm, 'c, M, C> {
         let addr = self.state.x[rs1].wrapping_add(i_imm as u32);
         let mut value: i16 = 0;
         if self.mem.access(addr, MemoryAccess::Load(&mut value)) {
-            write_rd!(self, rd, { value as u32 });
+            write_rd!(self, rd, {
+                value as u32
+            });
             end_op!(self)
         } else {
             end_op!(self, IllegalAccess)
@@ -319,7 +313,9 @@ impl<'s, 'm, 'c, M: 'm + Memory, C: 'c + Clock> Interp<'s, 'm, 'c, M, C> {
         let addr = self.state.x[rs1].wrapping_add(i_imm as u32);
         let mut value: u32 = 0;
         if self.mem.access(addr, MemoryAccess::Load(&mut value)) {
-            write_rd!(self, rd, { value as u32 });
+            write_rd!(self, rd, {
+                value as u32
+            });
             end_op!(self)
         } else {
             end_op!(self, IllegalAccess)
@@ -331,7 +327,9 @@ impl<'s, 'm, 'c, M: 'm + Memory, C: 'c + Clock> Interp<'s, 'm, 'c, M, C> {
         let addr = self.state.x[rs1].wrapping_add(i_imm as u32);
         let mut value: u8 = 0;
         if self.mem.access(addr, MemoryAccess::Load(&mut value)) {
-            write_rd!(self, rd, { value as u32 });
+            write_rd!(self, rd, {
+                value as u32
+            });
             end_op!(self)
         } else {
             end_op!(self, IllegalAccess)
@@ -343,7 +341,9 @@ impl<'s, 'm, 'c, M: 'm + Memory, C: 'c + Clock> Interp<'s, 'm, 'c, M, C> {
         let addr = self.state.x[rs1].wrapping_add(i_imm as u32);
         let mut value: u16 = 0;
         if self.mem.access(addr, MemoryAccess::Load(&mut value)) {
-            write_rd!(self, rd, { value as u32 });
+            write_rd!(self, rd, {
+                value as u32
+            });
             end_op!(self)
         } else {
             end_op!(self, IllegalAccess)
@@ -394,7 +394,11 @@ impl<'s, 'm, 'c, M: 'm + Memory, C: 'c + Clock> Interp<'s, 'm, 'c, M, C> {
     //% opcode=001_0011 funct3=010
     fn slti(&mut self, rd: usize, rs1: usize, i_imm: i32) -> CpuExit {
         write_rd!(self, rd, {
-            if (self.state.x[rs1] as i32) < i_imm { 1 } else { 0 }
+            if (self.state.x[rs1] as i32) < i_imm {
+                1
+            } else {
+                0
+            }
         });
         end_op!(self)
     }
@@ -402,7 +406,11 @@ impl<'s, 'm, 'c, M: 'm + Memory, C: 'c + Clock> Interp<'s, 'm, 'c, M, C> {
     //% opcode=001_0011 funct3=011
     fn sltiu(&mut self, rd: usize, rs1: usize, i_imm: i32) -> CpuExit {
         write_rd!(self, rd, {
-            if self.state.x[rs1] < i_imm as u32 { 1 } else { 0 }
+            if self.state.x[rs1] < i_imm as u32 {
+                1
+            } else {
+                0
+            }
         });
         end_op!(self)
     }
@@ -474,7 +482,11 @@ impl<'s, 'm, 'c, M: 'm + Memory, C: 'c + Clock> Interp<'s, 'm, 'c, M, C> {
     //% opcode=011_0011 funct7=000_0000 funct3=010
     fn slt(&mut self, rd: usize, rs1: usize, rs2: usize) -> CpuExit {
         write_rd!(self, rd, {
-            if (self.state.x[rs1] as i32) < (self.state.x[rs2] as i32) { 1 } else { 0 }
+            if (self.state.x[rs1] as i32) < (self.state.x[rs2] as i32) {
+                1
+            } else {
+                0
+            }
         });
         end_op!(self)
     }
@@ -482,7 +494,11 @@ impl<'s, 'm, 'c, M: 'm + Memory, C: 'c + Clock> Interp<'s, 'm, 'c, M, C> {
     //% opcode=011_0011 funct7=000_0000 funct3=011
     fn sltu(&mut self, rd: usize, rs1: usize, rs2: usize) -> CpuExit {
         write_rd!(self, rd, {
-            if self.state.x[rs1] < self.state.x[rs2] { 1 } else { 0 }
+            if self.state.x[rs1] < self.state.x[rs2] {
+                1
+            } else {
+                0
+            }
         });
         end_op!(self)
     }
@@ -582,7 +598,9 @@ impl<'s, 'm, 'c, M: 'm + Memory, C: 'c + Clock> Interp<'s, 'm, 'c, M, C> {
         if !self.access_csr(csr, CsrAccess::Read(&mut old)) {
             end_op!(self, IllegalInstruction);
         }
-        write_rd!(self, rd, { old });
+        write_rd!(self, rd, {
+            old
+        });
 
         if rs1 != 0 && !self.access_csr(csr, CsrAccess::Write(old | mask)) {
             end_op!(self, IllegalInstruction);
@@ -599,7 +617,9 @@ impl<'s, 'm, 'c, M: 'm + Memory, C: 'c + Clock> Interp<'s, 'm, 'c, M, C> {
         if !self.access_csr(csr, CsrAccess::Read(&mut old)) {
             end_op!(self, IllegalInstruction);
         }
-        write_rd!(self, rd, { old });
+        write_rd!(self, rd, {
+            old
+        });
 
         if rs1 != 0 && !self.access_csr(csr, CsrAccess::Write(old & !mask)) {
             end_op!(self, IllegalInstruction);
@@ -631,7 +651,9 @@ impl<'s, 'm, 'c, M: 'm + Memory, C: 'c + Clock> Interp<'s, 'm, 'c, M, C> {
         if !self.access_csr(csr, CsrAccess::Read(&mut old)) {
             end_op!(self, IllegalInstruction);
         }
-        write_rd!(self, rd, { old });
+        write_rd!(self, rd, {
+            old
+        });
 
         if !self.access_csr(csr, CsrAccess::Write(old | zimm)) {
             end_op!(self, IllegalInstruction);
@@ -646,7 +668,9 @@ impl<'s, 'm, 'c, M: 'm + Memory, C: 'c + Clock> Interp<'s, 'm, 'c, M, C> {
         if !self.access_csr(csr, CsrAccess::Read(&mut old)) {
             end_op!(self, IllegalInstruction);
         }
-        write_rd!(self, rd, { old });
+        write_rd!(self, rd, {
+            old
+        });
 
         if !self.access_csr(csr, CsrAccess::Write(old & !zimm)) {
             end_op!(self, IllegalInstruction);
@@ -761,7 +785,9 @@ impl<'s, 'm, 'c, M: 'm + Memory, C: 'c + Clock> Interp<'s, 'm, 'c, M, C> {
         let mut value: u32 = 0;
         if self.mem.access(addr, MemoryAccess::Load(&mut value)) {
             self.state.reservation = Some(addr);
-            write_rd!(self, rd, { value });
+            write_rd!(self, rd, {
+                value
+            });
             end_op!(self)
         } else {
             end_op!(self, IllegalAccess)
@@ -774,14 +800,18 @@ impl<'s, 'm, 'c, M: 'm + Memory, C: 'c + Clock> Interp<'s, 'm, 'c, M, C> {
         if self.state.reservation == Some(addr) {
             let value = self.state.x[rs2];
             if self.mem.access(addr, MemoryAccess::Store(value)) {
-                write_rd!(self, rd, { 0 });
+                write_rd!(self, rd, {
+                    0
+                });
                 self.state.reservation = None;
                 end_op!(self)
             } else {
                 end_op!(self, IllegalAccess)
             }
         } else {
-            write_rd!(self, rd, { 1 });
+            write_rd!(self, rd, {
+                1
+            });
             end_op!(self)
         }
     }
@@ -878,95 +908,93 @@ impl<'s, 'm, 'c, M: 'm + Memory, C: 'c + Clock> Interp<'s, 'm, 'c, M, C> {
 
     //% opcode=100_0011 funct2=00
     fn fmadd_s(&mut self, rd: usize, rs1: usize, rs2: usize, rs3: usize, rm: u32) -> CpuExit {
-        sf_calc!(self, rm, rd, { unsafe {
-            Sf64::from(sf::f32_mulAdd(
-                Sf32::from(self.state.f[rs1]),
-                Sf32::from(self.state.f[rs2]),
-                Sf32::from(self.state.f[rs3])
-            ))
-        } })
+        sf_calc!(self, rm, rd, {
+            unsafe {
+                Sf64::from(sf::f32_mulAdd(Sf32::from(self.state.f[rs1]),
+                                          Sf32::from(self.state.f[rs2]),
+                                          Sf32::from(self.state.f[rs3])))
+            }
+        })
     }
 
     //% opcode=100_0111 funct2=00
     fn fmsub_s(&mut self, rd: usize, rs1: usize, rs2: usize, rs3: usize, rm: u32) -> CpuExit {
-        sf_calc!(self, rm, rd, { unsafe {
-            Sf64::from(sf::f32_mulAdd(
-                Sf32::from(self.state.f[rs1]),
-                Sf32::from(self.state.f[rs2]),
-                Sf32::from(self.state.f[rs3]).negate()
-            ))
-        } })
+        sf_calc!(self, rm, rd, {
+            unsafe {
+                Sf64::from(sf::f32_mulAdd(Sf32::from(self.state.f[rs1]),
+                                          Sf32::from(self.state.f[rs2]),
+                                          Sf32::from(self.state.f[rs3]).negate()))
+            }
+        })
     }
 
     //% opcode=100_1011 funct2=00
     fn fnmsub_s(&mut self, rd: usize, rs1: usize, rs2: usize, rs3: usize, rm: u32) -> CpuExit {
-        sf_calc!(self, rm, rd, { unsafe {
-            Sf64::from(sf::f32_mulAdd(
-                Sf32::from(self.state.f[rs1]).negate(),
-                Sf32::from(self.state.f[rs2]),
-                Sf32::from(self.state.f[rs3])
-            ))
-        } })
+        sf_calc!(self, rm, rd, {
+            unsafe {
+                Sf64::from(sf::f32_mulAdd(Sf32::from(self.state.f[rs1]).negate(),
+                                          Sf32::from(self.state.f[rs2]),
+                                          Sf32::from(self.state.f[rs3])))
+            }
+        })
     }
 
     //% opcode=100_1111 funct2=00
     fn fnmadd_s(&mut self, rd: usize, rs1: usize, rs2: usize, rs3: usize, rm: u32) -> CpuExit {
-        sf_calc!(self, rm, rd, { unsafe {
-            Sf64::from(sf::f32_mulAdd(
-                Sf32::from(self.state.f[rs1]).negate(),
-                Sf32::from(self.state.f[rs2]),
-                Sf32::from(self.state.f[rs3]).negate()
-            ))
-        } })
+        sf_calc!(self, rm, rd, {
+            unsafe {
+                Sf64::from(sf::f32_mulAdd(Sf32::from(self.state.f[rs1]).negate(),
+                                          Sf32::from(self.state.f[rs2]),
+                                          Sf32::from(self.state.f[rs3]).negate()))
+            }
+        })
     }
 
     //% opcode=101_0011 funct7=000_0000
     fn fadd_s(&mut self, rd: usize, rs1: usize, rs2: usize, rm: u32) -> CpuExit {
-        sf_calc!(self, rm, rd, { unsafe {
-            Sf64::from(sf::f32_add(
-                Sf32::from(self.state.f[rs1]),
-                Sf32::from(self.state.f[rs2])
-            ))
-        } })
+        sf_calc!(self, rm, rd, {
+            unsafe {
+                Sf64::from(sf::f32_add(Sf32::from(self.state.f[rs1]),
+                                       Sf32::from(self.state.f[rs2])))
+            }
+        })
     }
 
     //% opcode=101_0011 funct7=000_0100
     fn fsub_s(&mut self, rd: usize, rs1: usize, rs2: usize, rm: u32) -> CpuExit {
-        sf_calc!(self, rm, rd, { unsafe {
-            Sf64::from(sf::f32_sub(
-                Sf32::from(self.state.f[rs1]),
-                Sf32::from(self.state.f[rs2])
-            ))
-        } })
+        sf_calc!(self, rm, rd, {
+            unsafe {
+                Sf64::from(sf::f32_sub(Sf32::from(self.state.f[rs1]),
+                                       Sf32::from(self.state.f[rs2])))
+            }
+        })
     }
 
     //% opcode=101_0011 funct7=000_1000
     fn fmul_s(&mut self, rd: usize, rs1: usize, rs2: usize, rm: u32) -> CpuExit {
-        sf_calc!(self, rm, rd, { unsafe {
-            Sf64::from(sf::f32_mul(
-                Sf32::from(self.state.f[rs1]),
-                Sf32::from(self.state.f[rs2])
-            ))
-        } })
+        sf_calc!(self, rm, rd, {
+            unsafe {
+                Sf64::from(sf::f32_mul(Sf32::from(self.state.f[rs1]),
+                                       Sf32::from(self.state.f[rs2])))
+            }
+        })
     }
 
     //% opcode=101_0011 funct7=000_1100
     fn fdiv_s(&mut self, rd: usize, rs1: usize, rs2: usize, rm: u32) -> CpuExit {
-        sf_calc!(self, rm, rd, { unsafe {
-            Sf64::from(sf::f32_div(
-                Sf32::from(self.state.f[rs1]),
-                Sf32::from(self.state.f[rs2])
-            ))
-        } })
+        sf_calc!(self, rm, rd, {
+            unsafe {
+                Sf64::from(sf::f32_div(Sf32::from(self.state.f[rs1]),
+                                       Sf32::from(self.state.f[rs2])))
+            }
+        })
     }
 
     //% opcode=101_0011 funct7=010_1100 rs2=0_0000
     fn fsqrt_s(&mut self, rd: usize, rs1: usize, rm: u32) -> CpuExit {
-        sf_calc!(self, rm, rd, { unsafe {
-            Sf64::from(sf::f32_sqrt(
-                Sf32::from(self.state.f[rs1])
-            ))
-        } })
+        sf_calc!(self, rm, rd, {
+            unsafe { Sf64::from(sf::f32_sqrt(Sf32::from(self.state.f[rs1]))) }
+        })
     }
 
     //% opcode=101_0011 funct7=001_0000 funct3=000
@@ -995,58 +1023,63 @@ impl<'s, 'm, 'c, M: 'm + Memory, C: 'c + Clock> Interp<'s, 'm, 'c, M, C> {
 
     //% opcode=101_0011 funct7=001_0100 funct3=000
     fn fmin_s(&mut self, rd: usize, rs1: usize, rs2: usize) -> CpuExit {
-        sf_calc!(self, rd, { unsafe {
-            let a = f32::from(self.state.f[rs1]);
-            let b = f32::from(self.state.f[rs2]);
+        sf_calc!(self, rd, {
+            unsafe {
+                let a = f32::from(self.state.f[rs1]);
+                let b = f32::from(self.state.f[rs2]);
 
-            if sf::f32_is_signaling_nan(Sf32::from(a)) || sf::f32_is_signaling_nan(Sf32::from(b)) {
-                sf::raise_flags(sf::FLAG_INVALID);
+                if sf::f32_is_signaling_nan(Sf32::from(a)) ||
+                   sf::f32_is_signaling_nan(Sf32::from(b)) {
+                    sf::raise_flags(sf::FLAG_INVALID);
+                }
+
+                Sf64::from(match (a.classify(), b.classify()) {
+                               (FpCategory::Nan, FpCategory::Nan) => f32::from(Sf32::NAN),
+                               (FpCategory::Nan, _) => b,
+                               (_, FpCategory::Nan) => a,
+                               (FpCategory::Zero, FpCategory::Zero) => {
+                                   if a.is_sign_negative() { a } else { b }
+                               }
+                               _ => f32::min(a, b),
+                           })
             }
-
-            Sf64::from(match (a.classify(), b.classify()) {
-                (FpCategory::Nan, FpCategory::Nan) => f32::from(Sf32::NAN),
-                (FpCategory::Nan, _) => b,
-                (_, FpCategory::Nan) => a,
-                (FpCategory::Zero, FpCategory::Zero) => {
-                    if a.is_sign_negative() { a } else { b }
-                },
-                _ => f32::min(a, b),
-            })
-        } })
+        })
     }
 
     //% opcode=101_0011 funct7=001_0100 funct3=001
     fn fmax_s(&mut self, rd: usize, rs1: usize, rs2: usize) -> CpuExit {
-        sf_calc!(self, rd, { unsafe {
-            let a = f32::from(self.state.f[rs1]);
-            let b = f32::from(self.state.f[rs2]);
+        sf_calc!(self, rd, {
+            unsafe {
+                let a = f32::from(self.state.f[rs1]);
+                let b = f32::from(self.state.f[rs2]);
 
-            if sf::f32_is_signaling_nan(Sf32::from(a)) || sf::f32_is_signaling_nan(Sf32::from(b)) {
-                sf::raise_flags(sf::FLAG_INVALID);
+                if sf::f32_is_signaling_nan(Sf32::from(a)) ||
+                   sf::f32_is_signaling_nan(Sf32::from(b)) {
+                    sf::raise_flags(sf::FLAG_INVALID);
+                }
+
+                Sf64::from(match (a.classify(), b.classify()) {
+                               (FpCategory::Nan, FpCategory::Nan) => f32::from(Sf32::NAN),
+                               (FpCategory::Nan, _) => b,
+                               (_, FpCategory::Nan) => a,
+                               (FpCategory::Zero, FpCategory::Zero) => {
+                                   if a.is_sign_positive() { a } else { b }
+                               }
+                               _ => f32::max(a, b),
+                           })
             }
-
-            Sf64::from(match (a.classify(), b.classify()) {
-                (FpCategory::Nan, FpCategory::Nan) => f32::from(Sf32::NAN),
-                (FpCategory::Nan, _) => b,
-                (_, FpCategory::Nan) => a,
-                (FpCategory::Zero, FpCategory::Zero) => {
-                    if a.is_sign_positive() { a } else { b }
-                },
-                _ => f32::max(a, b),
-            })
-        } })
+        })
     }
 
     //% opcode=101_0011 funct7=110_0000 rs2=0_0000
     fn fcvt_w_s(&mut self, rd: usize, rs1: usize, rm: u32) -> CpuExit {
         sf_wrap!(self, rm, {
-            write_rd!(self, rd, { unsafe {
-                sf::f32_to_i32(
-                    Sf32::from(self.state.f[rs1]),
-                    sf::get_rounding_mode(),
-                    true
-                ) as u32
-            } });
+            write_rd!(self, rd, {
+                unsafe {
+                    sf::f32_to_i32(Sf32::from(self.state.f[rs1]), sf::get_rounding_mode(), true) as
+                    u32
+                }
+            });
         });
         end_op!(self)
     }
@@ -1054,13 +1087,11 @@ impl<'s, 'm, 'c, M: 'm + Memory, C: 'c + Clock> Interp<'s, 'm, 'c, M, C> {
     //% opcode=101_0011 funct7=110_0000 rs2=0_0001
     fn fcvt_wu_s(&mut self, rd: usize, rs1: usize, rm: u32) -> CpuExit {
         sf_wrap!(self, rm, {
-            write_rd!(self, rd, { unsafe {
-                sf::f32_to_u32(
-                    Sf32::from(self.state.f[rs1]),
-                    sf::get_rounding_mode(),
-                    true
-                )
-            } });
+            write_rd!(self, rd, {
+                unsafe {
+                    sf::f32_to_u32(Sf32::from(self.state.f[rs1]), sf::get_rounding_mode(), true)
+                }
+            });
         });
         end_op!(self)
     }
@@ -1074,13 +1105,13 @@ impl<'s, 'm, 'c, M: 'm + Memory, C: 'c + Clock> Interp<'s, 'm, 'c, M, C> {
     //% opcode=101_0011 funct7=101_0000 funct3=010
     fn feq_s(&mut self, rd: usize, rs1: usize, rs2: usize) -> CpuExit {
         sf_wrap!(self, {
-            write_rd!(self, rd, { unsafe {
-                let res = sf::f32_eq(
-                    Sf32::from(self.state.f[rs1]),
-                    Sf32::from(self.state.f[rs2])
-                );
-                if res { 1 } else { 0 }
-            } });
+            write_rd!(self, rd, {
+                unsafe {
+                    let res = sf::f32_eq(Sf32::from(self.state.f[rs1]),
+                                         Sf32::from(self.state.f[rs2]));
+                    if res { 1 } else { 0 }
+                }
+            });
         });
         end_op!(self)
     }
@@ -1088,13 +1119,13 @@ impl<'s, 'm, 'c, M: 'm + Memory, C: 'c + Clock> Interp<'s, 'm, 'c, M, C> {
     //% opcode=101_0011 funct7=101_0000 funct3=001
     fn flt_s(&mut self, rd: usize, rs1: usize, rs2: usize) -> CpuExit {
         sf_wrap!(self, {
-            write_rd!(self, rd, { unsafe {
-                let res = sf::f32_lt(
-                    Sf32::from(self.state.f[rs1]),
-                    Sf32::from(self.state.f[rs2])
-                );
-                if res { 1 } else { 0 }
-            } });
+            write_rd!(self, rd, {
+                unsafe {
+                    let res = sf::f32_lt(Sf32::from(self.state.f[rs1]),
+                                         Sf32::from(self.state.f[rs2]));
+                    if res { 1 } else { 0 }
+                }
+            });
         });
         end_op!(self)
     }
@@ -1102,13 +1133,13 @@ impl<'s, 'm, 'c, M: 'm + Memory, C: 'c + Clock> Interp<'s, 'm, 'c, M, C> {
     //% opcode=101_0011 funct7=101_0000 funct3=000
     fn fle_s(&mut self, rd: usize, rs1: usize, rs2: usize) -> CpuExit {
         sf_wrap!(self, {
-            write_rd!(self, rd, { unsafe {
-                let res = sf::f32_le(
-                    Sf32::from(self.state.f[rs1]),
-                    Sf32::from(self.state.f[rs2])
-                );
-                if res { 1 } else { 0 }
-            } });
+            write_rd!(self, rd, {
+                unsafe {
+                    let res = sf::f32_le(Sf32::from(self.state.f[rs1]),
+                                         Sf32::from(self.state.f[rs2]));
+                    if res { 1 } else { 0 }
+                }
+            });
         });
         end_op!(self)
     }
@@ -1116,38 +1147,60 @@ impl<'s, 'm, 'c, M: 'm + Memory, C: 'c + Clock> Interp<'s, 'm, 'c, M, C> {
     //% opcode=101_0011 funct7=111_0000 funct3=001 rs2=0_0000
     fn fclass_s(&mut self, rd: usize, rs1: usize) -> CpuExit {
         let v = f32::from(self.state.f[rs1]);
-        write_rd!(self, rd, { match v.classify() {
-            FpCategory::Nan => {
-                if unsafe { sf::f32_is_signaling_nan(Sf32::from(v)) } { 0b01_0000_0000 } else { 0b10_0000_0000 }
-            },
-            FpCategory::Infinite => {
-                if v.is_sign_positive() { 0b00_1000_0000 } else { 0b00_0000_0001 }
-            },
-            FpCategory::Zero => {
-                if v.is_sign_positive() { 0b00_0001_0000 } else { 0b00_0000_1000 }
-            },
-            FpCategory::Subnormal => {
-                if v.is_sign_positive() { 0b00_0010_0000 } else { 0b00_0000_0100 }
-            },
-            FpCategory::Normal => {
-                if v.is_sign_positive() { 0b00_0100_0000 } else { 0b00_0000_0010 }
-            },
-        } });
+        write_rd!(self, rd, {
+            match v.classify() {
+                FpCategory::Nan => {
+                    if unsafe { sf::f32_is_signaling_nan(Sf32::from(v)) } {
+                        0b01_0000_0000
+                    } else {
+                        0b10_0000_0000
+                    }
+                }
+                FpCategory::Infinite => {
+                    if v.is_sign_positive() {
+                        0b00_1000_0000
+                    } else {
+                        0b00_0000_0001
+                    }
+                }
+                FpCategory::Zero => {
+                    if v.is_sign_positive() {
+                        0b00_0001_0000
+                    } else {
+                        0b00_0000_1000
+                    }
+                }
+                FpCategory::Subnormal => {
+                    if v.is_sign_positive() {
+                        0b00_0010_0000
+                    } else {
+                        0b00_0000_0100
+                    }
+                }
+                FpCategory::Normal => {
+                    if v.is_sign_positive() {
+                        0b00_0100_0000
+                    } else {
+                        0b00_0000_0010
+                    }
+                }
+            }
+        });
         end_op!(self)
     }
 
     //% opcode=101_0011 funct7=110_1000 rs2=0_0000
     fn fcvt_s_w(&mut self, rd: usize, rs1: usize, rm: u32) -> CpuExit {
-        sf_calc!(self, rm, rd, { unsafe {
-            Sf64::from(sf::i32_to_f32(self.state.x[rs1] as i32))
-        } });
+        sf_calc!(self, rm, rd, {
+            unsafe { Sf64::from(sf::i32_to_f32(self.state.x[rs1] as i32)) }
+        });
     }
 
     //% opcode=101_0011 funct7=110_1000 rs2=0_0001
     fn fcvt_s_wu(&mut self, rd: usize, rs1: usize, rm: u32) -> CpuExit {
-        sf_calc!(self, rm, rd, { unsafe {
-            Sf64::from(sf::u32_to_f32(self.state.x[rs1]))
-        } });
+        sf_calc!(self, rm, rd, {
+            unsafe { Sf64::from(sf::u32_to_f32(self.state.x[rs1])) }
+        });
     }
 
     //% opcode=101_0011 funct7=111_1000 funct3=000 rs2=0_0000
@@ -1185,95 +1238,77 @@ impl<'s, 'm, 'c, M: 'm + Memory, C: 'c + Clock> Interp<'s, 'm, 'c, M, C> {
 
     //% opcode=100_0011 funct2=01
     fn fmadd_d(&mut self, rd: usize, rs1: usize, rs2: usize, rs3: usize, rm: u32) -> CpuExit {
-        sf_calc!(self, rm, rd, { unsafe {
-            sf::f64_mulAdd(
-                self.state.f[rs1],
-                self.state.f[rs2],
-                self.state.f[rs3]
-            )
-        } })
+        sf_calc!(self, rm, rd, {
+            unsafe { sf::f64_mulAdd(self.state.f[rs1], self.state.f[rs2], self.state.f[rs3]) }
+        })
     }
 
     //% opcode=100_0111 funct2=01
     fn fmsub_d(&mut self, rd: usize, rs1: usize, rs2: usize, rs3: usize, rm: u32) -> CpuExit {
-        sf_calc!(self, rm, rd, { unsafe {
-            sf::f64_mulAdd(
-                self.state.f[rs1],
-                self.state.f[rs2],
-                self.state.f[rs3].negate()
-            )
-        } })
+        sf_calc!(self, rm, rd, {
+            unsafe {
+                sf::f64_mulAdd(self.state.f[rs1],
+                               self.state.f[rs2],
+                               self.state.f[rs3].negate())
+            }
+        })
     }
 
     //% opcode=100_1011 funct2=01
     fn fnmsub_d(&mut self, rd: usize, rs1: usize, rs2: usize, rs3: usize, rm: u32) -> CpuExit {
-        sf_calc!(self, rm, rd, { unsafe {
-            sf::f64_mulAdd(
-                self.state.f[rs1].negate(),
-                self.state.f[rs2],
-                self.state.f[rs3]
-            )
-        } })
+        sf_calc!(self, rm, rd, {
+            unsafe {
+                sf::f64_mulAdd(self.state.f[rs1].negate(),
+                               self.state.f[rs2],
+                               self.state.f[rs3])
+            }
+        })
     }
 
     //% opcode=100_1111 funct2=01
     fn fnmadd_d(&mut self, rd: usize, rs1: usize, rs2: usize, rs3: usize, rm: u32) -> CpuExit {
-        sf_calc!(self, rm, rd, { unsafe {
-            sf::f64_mulAdd(
-                self.state.f[rs1].negate(),
-                self.state.f[rs2],
-                self.state.f[rs3].negate()
-            )
-        } })
+        sf_calc!(self, rm, rd, {
+            unsafe {
+                sf::f64_mulAdd(self.state.f[rs1].negate(),
+                               self.state.f[rs2],
+                               self.state.f[rs3].negate())
+            }
+        })
     }
 
     //% opcode=101_0011 funct7=000_0001
     fn fadd_d(&mut self, rd: usize, rs1: usize, rs2: usize, rm: u32) -> CpuExit {
-        sf_calc!(self, rm, rd, { unsafe {
-            sf::f64_add(
-                self.state.f[rs1],
-                self.state.f[rs2]
-            )
-        } })
+        sf_calc!(self, rm, rd, {
+            unsafe { sf::f64_add(self.state.f[rs1], self.state.f[rs2]) }
+        })
     }
 
     //% opcode=101_0011 funct7=000_0101
     fn fsub_d(&mut self, rd: usize, rs1: usize, rs2: usize, rm: u32) -> CpuExit {
-        sf_calc!(self, rm, rd, { unsafe {
-            sf::f64_sub(
-                self.state.f[rs1],
-                self.state.f[rs2]
-            )
-        } })
+        sf_calc!(self, rm, rd, {
+            unsafe { sf::f64_sub(self.state.f[rs1], self.state.f[rs2]) }
+        })
     }
 
     //% opcode=101_0011 funct7=000_1001
     fn fmul_d(&mut self, rd: usize, rs1: usize, rs2: usize, rm: u32) -> CpuExit {
-        sf_calc!(self, rm, rd, { unsafe {
-            sf::f64_mul(
-                self.state.f[rs1],
-                self.state.f[rs2]
-            )
-        } })
+        sf_calc!(self, rm, rd, {
+            unsafe { sf::f64_mul(self.state.f[rs1], self.state.f[rs2]) }
+        })
     }
 
     //% opcode=101_0011 funct7=000_1101
     fn fdiv_d(&mut self, rd: usize, rs1: usize, rs2: usize, rm: u32) -> CpuExit {
-        sf_calc!(self, rm, rd, { unsafe {
-            sf::f64_div(
-                self.state.f[rs1],
-                self.state.f[rs2]
-            )
-        } })
+        sf_calc!(self, rm, rd, {
+            unsafe { sf::f64_div(self.state.f[rs1], self.state.f[rs2]) }
+        })
     }
 
     //% opcode=101_0011 funct7=010_1101 rs2=0_0000
     fn fsqrt_d(&mut self, rd: usize, rs1: usize, rm: u32) -> CpuExit {
-        sf_calc!(self, rm, rd, { unsafe {
-            sf::f64_sqrt(
-                self.state.f[rs1]
-            )
-        } })
+        sf_calc!(self, rm, rd, {
+            unsafe { sf::f64_sqrt(self.state.f[rs1]) }
+        })
     }
 
     //% opcode=101_0011 funct7=001_0001 funct3=000
@@ -1302,58 +1337,60 @@ impl<'s, 'm, 'c, M: 'm + Memory, C: 'c + Clock> Interp<'s, 'm, 'c, M, C> {
 
     //% opcode=101_0011 funct7=001_0101 funct3=000
     fn fmin_d(&mut self, rd: usize, rs1: usize, rs2: usize) -> CpuExit {
-        sf_calc!(self, rd, { unsafe {
-            let a = f64::from(self.state.f[rs1]);
-            let b = f64::from(self.state.f[rs2]);
+        sf_calc!(self, rd, {
+            unsafe {
+                let a = f64::from(self.state.f[rs1]);
+                let b = f64::from(self.state.f[rs2]);
 
-            if sf::f64_is_signaling_nan(Sf64::from(a)) || sf::f64_is_signaling_nan(Sf64::from(b)) {
-                sf::raise_flags(sf::FLAG_INVALID);
+                if sf::f64_is_signaling_nan(Sf64::from(a)) ||
+                   sf::f64_is_signaling_nan(Sf64::from(b)) {
+                    sf::raise_flags(sf::FLAG_INVALID);
+                }
+
+                Sf64::from(match (a.classify(), b.classify()) {
+                               (FpCategory::Nan, FpCategory::Nan) => f64::from(Sf64::NAN),
+                               (FpCategory::Nan, _) => b,
+                               (_, FpCategory::Nan) => a,
+                               (FpCategory::Zero, FpCategory::Zero) => {
+                                   if a.is_sign_negative() { a } else { b }
+                               }
+                               _ => f64::min(a, b),
+                           })
             }
-
-            Sf64::from(match (a.classify(), b.classify()) {
-                (FpCategory::Nan, FpCategory::Nan) => f64::from(Sf64::NAN),
-                (FpCategory::Nan, _) => b,
-                (_, FpCategory::Nan) => a,
-                (FpCategory::Zero, FpCategory::Zero) => {
-                    if a.is_sign_negative() { a } else { b }
-                },
-                _ => f64::min(a, b),
-            })
-        } })
+        })
     }
 
     //% opcode=101_0011 funct7=001_0101 funct3=001
     fn fmax_d(&mut self, rd: usize, rs1: usize, rs2: usize) -> CpuExit {
-        sf_calc!(self, rd, { unsafe {
-            let a = f64::from(self.state.f[rs1]);
-            let b = f64::from(self.state.f[rs2]);
+        sf_calc!(self, rd, {
+            unsafe {
+                let a = f64::from(self.state.f[rs1]);
+                let b = f64::from(self.state.f[rs2]);
 
-            if sf::f64_is_signaling_nan(Sf64::from(a)) || sf::f64_is_signaling_nan(Sf64::from(b)) {
-                sf::raise_flags(sf::FLAG_INVALID);
+                if sf::f64_is_signaling_nan(Sf64::from(a)) ||
+                   sf::f64_is_signaling_nan(Sf64::from(b)) {
+                    sf::raise_flags(sf::FLAG_INVALID);
+                }
+
+                Sf64::from(match (a.classify(), b.classify()) {
+                               (FpCategory::Nan, FpCategory::Nan) => f64::from(Sf64::NAN),
+                               (FpCategory::Nan, _) => b,
+                               (_, FpCategory::Nan) => a,
+                               (FpCategory::Zero, FpCategory::Zero) => {
+                                   if a.is_sign_positive() { a } else { b }
+                               }
+                               _ => f64::max(a, b),
+                           })
             }
-
-            Sf64::from(match (a.classify(), b.classify()) {
-                (FpCategory::Nan, FpCategory::Nan) => f64::from(Sf64::NAN),
-                (FpCategory::Nan, _) => b,
-                (_, FpCategory::Nan) => a,
-                (FpCategory::Zero, FpCategory::Zero) => {
-                    if a.is_sign_positive() { a } else { b }
-                },
-                _ => f64::max(a, b),
-            })
-        } })
+        })
     }
 
     //% opcode=101_0011 funct7=110_0001 rs2=0_0000
     fn fcvt_w_d(&mut self, rd: usize, rs1: usize, rm: u32) -> CpuExit {
         sf_wrap!(self, rm, {
-            write_rd!(self, rd, { unsafe {
-                sf::f64_to_i32(
-                    self.state.f[rs1],
-                    sf::get_rounding_mode(),
-                    true
-                ) as u32
-            } });
+            write_rd!(self, rd, {
+                unsafe { sf::f64_to_i32(self.state.f[rs1], sf::get_rounding_mode(), true) as u32 }
+            });
         });
         end_op!(self)
     }
@@ -1361,13 +1398,9 @@ impl<'s, 'm, 'c, M: 'm + Memory, C: 'c + Clock> Interp<'s, 'm, 'c, M, C> {
     //% opcode=101_0011 funct7=110_0001 rs2=0_0001
     fn fcvt_wu_d(&mut self, rd: usize, rs1: usize, rm: u32) -> CpuExit {
         sf_wrap!(self, rm, {
-            write_rd!(self, rd, { unsafe {
-                sf::f64_to_u32(
-                    self.state.f[rs1],
-                    sf::get_rounding_mode(),
-                    true
-                )
-            } });
+            write_rd!(self, rd, {
+                unsafe { sf::f64_to_u32(self.state.f[rs1], sf::get_rounding_mode(), true) }
+            });
         });
         end_op!(self)
     }
@@ -1375,13 +1408,12 @@ impl<'s, 'm, 'c, M: 'm + Memory, C: 'c + Clock> Interp<'s, 'm, 'c, M, C> {
     //% opcode=101_0011 funct7=101_0001 funct3=010
     fn feq_d(&mut self, rd: usize, rs1: usize, rs2: usize) -> CpuExit {
         sf_wrap!(self, {
-            write_rd!(self, rd, { unsafe {
-                let res = sf::f64_eq(
-                    self.state.f[rs1],
-                    self.state.f[rs2]
-                );
-                if res { 1 } else { 0 }
-            } });
+            write_rd!(self, rd, {
+                unsafe {
+                    let res = sf::f64_eq(self.state.f[rs1], self.state.f[rs2]);
+                    if res { 1 } else { 0 }
+                }
+            });
         });
         end_op!(self)
     }
@@ -1389,13 +1421,12 @@ impl<'s, 'm, 'c, M: 'm + Memory, C: 'c + Clock> Interp<'s, 'm, 'c, M, C> {
     //% opcode=101_0011 funct7=101_0001 funct3=001
     fn flt_d(&mut self, rd: usize, rs1: usize, rs2: usize) -> CpuExit {
         sf_wrap!(self, {
-            write_rd!(self, rd, { unsafe {
-                let res = sf::f64_lt(
-                    self.state.f[rs1],
-                    self.state.f[rs2]
-                );
-                if res { 1 } else { 0 }
-            } });
+            write_rd!(self, rd, {
+                unsafe {
+                    let res = sf::f64_lt(self.state.f[rs1], self.state.f[rs2]);
+                    if res { 1 } else { 0 }
+                }
+            });
         });
         end_op!(self)
     }
@@ -1403,13 +1434,12 @@ impl<'s, 'm, 'c, M: 'm + Memory, C: 'c + Clock> Interp<'s, 'm, 'c, M, C> {
     //% opcode=101_0011 funct7=101_0001 funct3=000
     fn fle_d(&mut self, rd: usize, rs1: usize, rs2: usize) -> CpuExit {
         sf_wrap!(self, {
-            write_rd!(self, rd, { unsafe {
-                let res = sf::f64_le(
-                    self.state.f[rs1],
-                    self.state.f[rs2]
-                );
-                if res { 1 } else { 0 }
-            } });
+            write_rd!(self, rd, {
+                unsafe {
+                    let res = sf::f64_le(self.state.f[rs1], self.state.f[rs2]);
+                    if res { 1 } else { 0 }
+                }
+            });
         });
         end_op!(self)
     }
@@ -1417,61 +1447,87 @@ impl<'s, 'm, 'c, M: 'm + Memory, C: 'c + Clock> Interp<'s, 'm, 'c, M, C> {
     //% opcode=101_0011 funct7=111_0001 funct3=001 rs2=0_0000
     fn fclass_d(&mut self, rd: usize, rs1: usize) -> CpuExit {
         let v = f64::from(self.state.f[rs1]);
-        write_rd!(self, rd, { match v.classify() {
-            FpCategory::Nan => {
-                if unsafe { sf::f64_is_signaling_nan(Sf64::from(v)) } { 0b01_0000_0000 } else { 0b10_0000_0000 }
-            },
-            FpCategory::Infinite => {
-                if v.is_sign_positive() { 0b00_1000_0000 } else { 0b00_0000_0001 }
-            },
-            FpCategory::Zero => {
-                if v.is_sign_positive() { 0b00_0001_0000 } else { 0b00_0000_1000 }
-            },
-            FpCategory::Subnormal => {
-                if v.is_sign_positive() { 0b00_0010_0000 } else { 0b00_0000_0100 }
-            },
-            FpCategory::Normal => {
-                if v.is_sign_positive() { 0b00_0100_0000 } else { 0b00_0000_0010 }
-            },
-        } });
+        write_rd!(self, rd, {
+            match v.classify() {
+                FpCategory::Nan => {
+                    if unsafe { sf::f64_is_signaling_nan(Sf64::from(v)) } {
+                        0b01_0000_0000
+                    } else {
+                        0b10_0000_0000
+                    }
+                }
+                FpCategory::Infinite => {
+                    if v.is_sign_positive() {
+                        0b00_1000_0000
+                    } else {
+                        0b00_0000_0001
+                    }
+                }
+                FpCategory::Zero => {
+                    if v.is_sign_positive() {
+                        0b00_0001_0000
+                    } else {
+                        0b00_0000_1000
+                    }
+                }
+                FpCategory::Subnormal => {
+                    if v.is_sign_positive() {
+                        0b00_0010_0000
+                    } else {
+                        0b00_0000_0100
+                    }
+                }
+                FpCategory::Normal => {
+                    if v.is_sign_positive() {
+                        0b00_0100_0000
+                    } else {
+                        0b00_0000_0010
+                    }
+                }
+            }
+        });
         end_op!(self)
     }
 
     //% opcode=101_0011 funct7=110_1001 rs2=0_0000
     fn fcvt_d_w(&mut self, rd: usize, rs1: usize, rm: u32) -> CpuExit {
-        sf_calc!(self, rm, rd, { unsafe {
-            sf::i32_to_f64(self.state.x[rs1] as i32)
-        } });
+        sf_calc!(self, rm, rd, {
+            unsafe { sf::i32_to_f64(self.state.x[rs1] as i32) }
+        });
     }
 
     //% opcode=101_0011 funct7=110_1001 rs2=0_0001
     fn fcvt_d_wu(&mut self, rd: usize, rs1: usize, rm: u32) -> CpuExit {
-        sf_calc!(self, rm, rd, { unsafe {
-            sf::u32_to_f64(self.state.x[rs1])
-        } });
+        sf_calc!(self, rm, rd, {
+            unsafe { sf::u32_to_f64(self.state.x[rs1]) }
+        });
     }
 
     //% opcode=101_0011 funct7=010_0000 rs2=0_0001
     fn fcvt_s_d(&mut self, rd: usize, rs1: usize, rm: u32) -> CpuExit {
-        sf_calc!(self, rm, rd, { unsafe {
-            let v = self.state.f[rs1];
-            if f64::from(v).is_nan() {
-                Sf64::from(Sf32::NAN)
-            } else {
-                Sf64::from(sf::f64_to_f32(v))
+        sf_calc!(self, rm, rd, {
+            unsafe {
+                let v = self.state.f[rs1];
+                if f64::from(v).is_nan() {
+                    Sf64::from(Sf32::NAN)
+                } else {
+                    Sf64::from(sf::f64_to_f32(v))
+                }
             }
-        } });
+        });
     }
 
     //% opcode=101_0011 funct7=010_0001 rs2=0_0000
     fn fcvt_d_s(&mut self, rd: usize, rs1: usize, rm: u32) -> CpuExit {
-        sf_calc!(self, rm, rd, { unsafe {
-            let v = Sf32::from(self.state.f[rs1]);
-            if f32::from(v).is_nan() {
-                Sf64::NAN
-            } else {
-                sf::f32_to_f64(v)
+        sf_calc!(self, rm, rd, {
+            unsafe {
+                let v = Sf32::from(self.state.f[rs1]);
+                if f32::from(v).is_nan() {
+                    Sf64::NAN
+                } else {
+                    sf::f32_to_f64(v)
+                }
             }
-        } });
+        });
     }
 }

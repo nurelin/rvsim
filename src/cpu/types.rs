@@ -1,5 +1,5 @@
-use ::cpu::op::Op;
-use ::softfloat::Sf64;
+use cpu::op::Op;
+use softfloat::Sf64;
 use std::mem::size_of;
 
 /// Statuses with which virtual CPU execution may stop.
@@ -47,11 +47,6 @@ pub enum CpuError {
     /// This is typically handled by the caller and resumed from. `pc` is advanced to the next
     /// instruction, no other state is altered.
     Ebreak,
-
-    /// The `Clock` indicated the execution quota was exceeded.
-    ///
-    /// This is typically handled by the caller and resumed from. State is unaltered.
-    QuotaExceeded,
 }
 
 /// Struct containing all virtual CPU state.
@@ -120,9 +115,10 @@ impl Memory for [u8] {
         if let Some(slice) = self.get_mut(addr..end) {
             let ptr = slice.as_mut_ptr() as *mut T;
             match access {
-                MemoryAccess::Load(dest) | MemoryAccess::Exec(dest) => {
+                MemoryAccess::Load(dest) |
+                MemoryAccess::Exec(dest) => {
                     unsafe { *dest = *ptr };
-                },
+                }
                 MemoryAccess::Store(value) => {
                     unsafe { *ptr = value };
                 }
@@ -155,14 +151,6 @@ pub trait Clock {
     /// Note that, even though these values are 64-bit, it is recommended implementations use
     /// `wrapping_add`.
     fn progress(&self, op: &Op);
-
-    /// Check execution quotas. Called at the very start of `Interp::step`.
-    ///
-    /// When this return `false`, the virtual CPU is stopped with `CpuError::QuotaExceeded`. This
-    /// allows the simulator to implement time slicing.
-    ///
-    /// This method is optional, and always returns `true` if not implemented.
-    fn check_quota(&self) -> bool { true }
 }
 
 /// A simple implementation of the `Clock` trait.
